@@ -9,9 +9,11 @@ import matplotlib.pyplot as plt
 import warnings
 import sklearn
 from sklearn.exceptions import DataConversionWarning
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D 
 from PyAstronomy import pyasl
 import matplotlib.pyplot as animation
+
+from system_var import system_vars
 
 
 import mass_fraction_evolver
@@ -26,37 +28,25 @@ class System():
         self.ID = system_ID                          # system ID
         self.Mcoeffs = [0.00,0.84,0.57,0.00,0.00]    # polynomial coefficients for probability distribution
 
-        self.Mcore = np.zeros(self.Nplanets)         # asign array for planet core masses
-        self.Xinit = np.zeros(self.Nplanets)         # asign array for planet initial atm. mass fractions
-        self.composition = np.zeros(self.Nplanets)   # asign array for planet core compositions
-        self.period = np.zeros(self.Nplanets)        # asign array for planet periods
-        self.sma = np.zeros(self.Nplanets)           # asign array for planet semi-major axis
-        self.KHtimescale = np.zeros(self.Nplanets)   # asign array for planet initial kelvin-helmholtz (cooling) timescales 
-        self.system_age = np.zeros(self.Nplanets)    # asign array for planet (observed) ages
-        self.Rplanet = np.zeros(self.Nplanets)       # asign array for planet radii
-        self.Mplanet = np.zeros(self.Nplanets)       # asign array for planet masses (core + atm.)
-        self.Xfinal = np.zeros(self.Nplanets)        # asign array for planet final atm. mass fractions
+        for system_var in system_vars:
+            setattr(self, system_var, np.zeros(self.Nplanets))
+
         self.Ptype = [0] * self.Nplanets             # asign array for planet type i.e. super-Earth or sub-Neptune
-        self.P_transit = np.zeros(self.Nplanets)     # asign array for planet probability of transiting
-        self.P_detection = np.zeros(self.Nplanets)   # asign array for planet probability of being detected 
-        self.probability = np.zeros(self.Nplanets)   # asign array for planet probabilities of transiting and being detected
         self.transits = [0] * self.Nplanets          # asign array for whether planet transits or not
         self.detected = [0] * self.Nplanets          # asign array for whether planet is detected or not
-        self.ecc = np.zeros(self.Nplanets)           # asign array for planet eccentricity
-        self.inclination = np.zeros(self.Nplanets)   # asign array for planet inclination
-        self.periastron = np.zeros(self.Nplanets)    # asign array for planet argument of periastron
-        self.bimpactpar = np.zeros(self.Nplanets)    # asign array for b impact parameter 
-        self.Rstar = np.zeros(self.Nplanets)         # asign array for stellar body Radius
+
+
         self.hillradius = np.zeros(self.Nplanets - 1)# asign array for planet PAIR Mutual Hill Radius
+        self.instabcriterion = np.zeros(self.Nplanets - 1)  # asign array for instability criterion calculated from MHR
         self.sorted_indices = []                     # asign array for planet semi major axis sorted indices 
         self.sorted_sma = []                         # asign array for planet sorted semi major axis
-        self.sorted_Mcore = [] # asign array for planet mass core sorted with new indices
-        self.sorted_ecc = []
-        self.long_asc_node = np.zeros(self.Nplanets) # asign array for longitude of the ascending node for the i-th planet in system
-        self.instabcriterion = np.zeros(self.Nplanets - 1)
-        self.Pcdf = period_distribution_CDF(power1=0.4,power2=0.4,cutoff=5.0)        # define cumulative distribution function for period 
-        self.M_cdf = bernstein_CDF(self.Mcoeffs,                                    # define cumulative distribution function for core mass 
-                                   lims=[0.6,100])
+        self.sorted_Mcore = []                       # asign array for planet mass core sorted with new indices
+        self.sorted_ecc = []                         # asign array for planet orbit eccentricity sorted with new indices
+
+        self.Pcdf = period_distribution_CDF(power1=0.4,power2=0.4,cutoff=5.0)        # define cumulative distribution function for period
+        
+        # define cumulative distribution function for core mass
+        self.M_cdf = bernstein_CDF(self.Mcoeffs, lims=[0.6,100])
 
         self.cmass_disp = cmass_disp                 # asign a core mass dispersion
         self.X_disp = X_disp                         # asign a initial atmospheric mass fraction dispersion
@@ -64,139 +54,138 @@ class System():
         self.model = model                           # choose which evolutionary model to use photoevaporation=0, core-powered mass-loss=1
         self.plot = plot                             # decide whether you want to plot the system architecture, default is False
 
-        self.generate()
+        self.generate()             # generate planet parameters
         self.evolve(plot_system=self.plot)           # evolve the system through photoevaporation or core-powered mass-loss
         self.plot_orbits()                           # plots the system orbits using generate variables 
-        # self.probabilities()                         # calculate observing probabilities
-        # self.tabulate()                              # tabulate results
-        # self.ratios()                                # calculate period and radii ratios
+        self.probabilities()                         # calculate observing probabilities
+        self.tabulate()                              # tabulate results
+        self.ratios()                                # calculate period and radii ratios
 
 
-    # generate planet parameters
     def generate(self):
-        Mcore_check = False 
-        Xinit_check = False 
-        Mstar_check = False
-
         self.Pc = self.Pcdf(random.uniform())
-        # add a check that 1 < Pc < 100
+
+        self.Mstar = self.generate_stellar_mass()
         
-        # draw random stellar mass according to Gaussian distributions between [0.5,1.5]Msol
-        while Mstar_check == False:
-            self.Mstar = random.normal(loc=1.0,
-                                        scale=0.15)
-            self.smet = 0.0
-            if 0.5 < self.Mstar < 1.5:
-                Mstar_check = True
-
-
-        # for each planet, asign period, core mass and Xinit
+        # for each planet
         for i in range(self.Nplanets):
-            Xinit_check = False
-            Mcore_check = False
-            Per_check = False
-            Ecc_check = False
-            Incl_check = False
-            Periastron_check = False
-            Stableorb_check = False
+            self.Mcore[i] = self.generate_core_mass(i)
+            self.period[i] = self.generate_period()
+            self.sma[i] = self.calculate_sma(self.period[i])
 
-            while Mcore_check == False:
-                # fist planet core mass from bernstein polynimial (see Rogers and Owen 2021)
-                if i == 0:
-                    self.Mcore[i] = 10**self.M_cdf(random.uniform()) 
-                # all others have the same mass but with some core mass dispersion cmass_disp
-                else:
-                    self.Mcore[i] = random.normal(self.Mcore[0], self.cmass_disp)
-                if 0.6 < self.Mcore[i] < 20.0:
-                    Mcore_check = True
+            self.ecc[i] = self.generate_eccentricity()
+            self.inclination[i] = self.generate_inclination()
+            self.periastron[i] = self.generate_periastron()
 
-            while Per_check == False:
-                self.period[i] = self.Pc * random.lognormal(0, self.Nplanets*0.21)
-                # sma = distance from star, 
-                # [10, 9, 18.3]
-                self.sma[i] = (((self.period[i] * 24 * 60 * 60)**2 * G * self.Mstar * M_sun / (4 * np.pi * np.pi))**(1/3)) / AU
+            self.Xinit[i] = self.generate_Xinit(i)
 
-               # print(i, self.period[i], self.Pc)
-
-                if 1.0 < self.period[i] < 100.0:
-                    Per_check = True
-
-            while Ecc_check == False:
-                self.ecc[i] = np.random.rayleigh(0.020)
-                # orbital eccentricities drawn from a rayleigh distr. self.ecc is the (e) created for each planet
-
-                print(i, self.ecc[i])
-
-                if 0.0 <= self.ecc[i] < 1.0:
-                    Ecc_check = True
-
-            while Incl_check == False:
-                self.inclination[i] = np.random.rayleigh(1.40)
-
-                if 0 <= self.inclination[i] <= 90:
-                    Incl_check = True
-
-            while Periastron_check == False:
-                self.periastron[i] = np.random.uniform(0, 2 * np.pi)
-                
-                if 0 <= self.periastron[i] <= 2 * np.pi:
-                    Periastron_check = True
-
-            while Xinit_check == False:
-
-                # if period generator (above) failed, it returns sets self.period[i]=0. We will ignore this planet.
-                if self.period[i] == 0:
-                    self.Xinit[i] = 0
-                    Xinit_check = True
-                else:
-                    # initial atmospheric mass fraction according to scaling relation of Ginzburg et al. 2016
-                    L = 10**Lbol_interp([self.Mstar, 0.0, np.log10(3000 * 1e6)])[0] * L_sun
-                    Teq = ( (L / (16*stefan*pi)) * (4*pi*pi / (G * self.Mstar * M_sun * (self.period[i] * day)**2))**(2/3) )**0.25
-                    self.Xinit[i] = 0.01 * (self.Mcore[i]**0.4) * ((Teq / 1000)**0.25)
-                    if self.Xinit[i] < 0.001:
-                        self.Xinit[i] = 1e-4
-                    if self.Xinit[i] > 0.5:
-                        self.Xinit[i] = 0.5
-                    Xinit_check = True
-
-            # assume all planets have Earth-like core composition, initial KH timescale of 100Myr and are observed at 5 Gyr
             self.composition[i] = 0.33
             self.KHtimescale[i] = 100
             self.system_age[i] = 5000
 
+        self.check_stable_orbits()
 
-        while Stableorb_check == False:
-                 
-            self.sorted_indices = np.argsort(self.sma)
-            self.sorted_sma = self.sma[self.sorted_indices]
-            self.sorted_Mcore = self.Mcore[self.sorted_indices]
-            
-            pairs = self.Nplanets - 1 # 5 planets, 4 pairs [ A B C D E ] -> Sort [ C D B A E ] -> Pairs CD DB BA AE hmmmm...
-                 
-            for p in range(pairs - 5):
-                sorted_i = self.sorted_indices[p]  # Index of the first planet in the pair
-                sorted_k = self.sorted_indices[p + 1]  # Index of the second planet in the pair
-                     
-                self.hillradius[p] = (((self.sorted_sma[sorted_i] + self.sorted_sma[sorted_k]) * AU)/ 2) * ((((self.sorted_Mcore[sorted_i] / self.sorted_Mcore[sorted_k]) * M_sun) / (3 * self.Mstar * M_sun)) ** (1/3))
+    def generate_stellar_mass(self):
+        while True:
+            Mstar = random.normal(loc=1.0, scale=0.15)
+            if 0.5 < Mstar < 1.5:
+                return Mstar
 
-                self.instabcriterion[p] = (((self.sorted_sma[sorted_k] * AU) * (1 - self.sorted_ecc[sorted_k]))-((self.sorted_sma[sorted_i] * AU) * (1 + self.sorted_ecc[sorted_i])))/ self.hillradius[p]
+    def generate_core_mass(self, i):
+        while True:
+            if i == 0:
+                Mcore = 10 ** self.M_cdf(random.uniform())
+            else:
+                Mcore = random.normal(self.Mcore[0], self.cmass_disp)
+            if 0.6 < Mcore < 20.0:
+                return Mcore
 
-                print("Mutual Hill Radius", sorted_i, "-", sorted_k, ":", self.hillradius)
+    def generate_period(self):
+        while True:
+            period = self.Pc * random.lognormal(0, self.Nplanets * 0.21)
+            if 1.0 < period < 100.0:
+                return period
+
+    def generate_eccentricity(self):
+        while True:
+            ecc = np.random.rayleigh(0.020)
+            if 0.0 <= ecc < 1.0:
+                return ecc
+    
+    def generate_periastron(self):
+        while True:
+            periastron = np.random.uniform(0, 2 * np.pi)
+            if 0 <= periastron <= 2 * np.pi:
+                return periastron
+    
+    def generate_inclination(self):
+        while True:
+            inclination = np.random.rayleigh(1.40)
+            if 0 <= inclination <= 90:
+                return inclination
+
+    def generate_Xinit(self, i):
+        Xinit_check = False
+
+        while not Xinit_check:
+            if self.period[i] == 0:
+                Xinit = 0
+                Xinit_check = True
+            else:
+                L = 10**Lbol_interp([self.Mstar, 0.0, np.log10(3000 * 1e6)])[0] * L_sun
                 
+                Teq = ((L / (16 * stefan * pi)) * (4 * pi * pi / (G * self.Mstar * M_sun * (self.period[i] * day)**2))**(2/3))**0.25
+                
+                Xinit = 0.01 * (self.Mcore[i]**0.4) * ((Teq / 1000)**0.25)
 
-                if self.instabcriterion[p] >= 8.0: 
+                if Xinit < 0.001:
+                    Xinit = 1e-4
+                if Xinit > 0.5:
+                    Xinit = 0.5
+
+                Xinit_check = True
+
+        return Xinit
+
+
+    def calculate_sma(self, period):
+        sma = (((period * 24 * 60 * 60) ** 2 * G * self.Mstar * M_sun / (4 * np.pi * np.pi)) ** (1 / 3)) / AU
+        return sma
+
+    def check_stable_orbits(self):
+        Stableorb_check = False
+
+        while not Stableorb_check:
+            self.sort_planets_by_sma()
+            pairs = self.Nplanets - 1
+
+            for p in range(pairs):
+                sorted_i = self.sorted_indices[p]
+                sorted_k = self.sorted_indices[p + 1]
+
+                self.hillradius[p] = ((((self.sorted_sma[sorted_i] + self.sorted_sma[sorted_k])) * AU / 2)) * ((((self.sorted_Mcore[sorted_i] / self.sorted_Mcore[sorted_k]) * M_earth) / (3 * self.Mstar * M_sun)) ** (1/3))
+                self.instabcriterion[p] = (((self.sorted_sma[sorted_k] * AU) * (1 - self.sorted_ecc[sorted_k])) - ((self.sorted_sma[sorted_i] * AU) * (1 + self.sorted_ecc[sorted_i])))/self.hillradius[p]
+
+                if self.instabcriterion[p] >= 8.0:
                     Stableorb_check = True
+        return
+
+    def sort_planets_by_sma(self):
+        self.sorted_indices = np.argsort(self.sma)
+        self.sorted_sma = self.sma[self.sorted_indices]
+        self.sorted_Mcore = self.Mcore[self.sorted_indices]
+        self.sorted_ecc = self.ecc[self.sorted_indices]
 
 
     def plot_orbits(self):
          fig = plt.figure()
          ax = fig.add_subplot(111, projection='3d')
          
-         num_points = 100
+         num_points = 200
         
          for i in range(self.Nplanets):
              
-             print(i, self.sma[i] * AU, self.inclination[i], self.periastron[i], self.ecc[i]) # a good check
+             print(i, "sma", self.sma[i] * AU, "incl", self.inclination[i], "perias", self.periastron[i],"ecc",  self.ecc[i]) # a good check
 
              sma = self.sma[i]
              ecc = self.ecc[i]
@@ -222,7 +211,7 @@ class System():
 
 
     def evolve(self, plot_system=False):
-
+        self.smet = 0
         for i in range(self.Nplanets):
 
             # if period generator failed, ignore this planet
@@ -260,7 +249,6 @@ class System():
             plt.tight_layout()
 
                 
-            
     def probabilities(self):
 
         Bimpact_check = False
@@ -305,8 +293,6 @@ class System():
                 self.Rstar = (self.Mstar ** 0.8) # solar units 
 
                 self.bimpactpar[i] = ((((self.sma[i] * AU ) * (np.cos(self.inclination[i])))/ self.Rstar * R_sun) * ((1-(self.ecc[i] ** 2)) / (1 + (self.ecc[i] * np.sin(self.periastron[i])))))
-                #check sma, check by force system to have small incl no ecc, near 0 b 
-                #sma 1 solar radii if incl 90, no ecc, b= 1
 
                 if self.bimpactpar[i] < (1 + (self.Rplanet[i] / self.Rstar)):
                     Bimpact_check = True
@@ -315,18 +301,20 @@ class System():
 
     def tabulate(self):
         
-        d = {'ID': self.ID,
-             'smass': self.Mstar,
-             'period': self.period,
-             'prad': self.Rplanet,
-             'Xinit': self.Xinit,
-             'Xfinal': self.Xfinal,
-             'cmass': self.Mcore,
-             'pmass': self.Mplanet,
-             'composition': self.composition,
-             'type': self.Ptype,
-             'prob': self.probability,
-             'detected': self.detected}
+        d = {
+            'ID': self.ID,
+            'smass': self.Mstar,
+            'period': self.period,
+            'prad': self.Rplanet,
+            'Xinit': self.Xinit,
+            'Xfinal': self.Xfinal,
+            'cmass': self.Mcore,
+            'pmass': self.Mplanet,
+            'composition': self.composition,
+            'type': self.Ptype,
+            'prob': self.probability,
+            'detected': self.detected
+        }
         
         self.df = pd.DataFrame(data=d)
         self.df = self.df.query('period > 0')
@@ -376,10 +364,9 @@ class System():
              'ratio_detect': self.ratio_detect}
 
         self.df_ratio = pd.DataFrame(data=d)
-        # print(self.df_ratio)
+
 
 def bernstein_poly(x, order, coefficients):
-
     """
     Bernstein polynomials. See appendix of Rogers & Owen 2021
     """
@@ -487,3 +474,7 @@ def run_systems(Nsystems, cmass_disp, X_disp):
 run_systems(1, 0.0, 0.0)
 plt.tight_layout()
 plt.show()
+
+# if "__name__" == "__main__":
+#     print("HI")
+

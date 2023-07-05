@@ -14,7 +14,7 @@ import RKF45
 
 transition = False 
 
-efficiency_scaler = np.load("./Data/Grids/eff_shape_file.npy", allow_pickle=True).item()
+efficiency_scaler = np.load("eff_shape_file.npy", allow_pickle=True).item()
 Mp_scale = 7.603262769401823e+27
 norm = 0.981533205679987
 norm_eff = 0.1642377032138817
