@@ -14,7 +14,7 @@ from PyAstronomy import pyasl
 import matplotlib.pyplot as animation
 
 from system_var import system_vars
-
+import time
 
 import mass_fraction_evolver
 from constants import *
@@ -26,6 +26,7 @@ class System():
     def __init__(self, Nplanets, system_ID, cmass_disp, X_disp, model=0, plot=False):
         self.Nplanets = Nplanets                     # number of planets in system
         self.ID = system_ID                          # system ID
+        print(type(self.ID))
         self.Mcoeffs = [0.00,0.84,0.57,0.00,0.00]    # polynomial coefficients for probability distribution
 
         for system_var in system_vars:
@@ -77,6 +78,8 @@ class System():
             self.inclination[i] = self.generate_inclination()
             self.periastron[i] = self.generate_periastron()
 
+            print(f"ecc: {self.ecc[0]}")
+            time.sleep(10000)
             self.Xinit[i] = self.generate_Xinit(i)
 
             self.composition[i] = 0.33
@@ -237,6 +240,7 @@ class System():
         if plot_system:
             plt.figure(0)
             for i in range(len(self.period)):
+
                 if self.Ptype[i] == 'SE':
                     plt.scatter(self.period[i], [float(self.ID[-1])], s=10*self.Rplanet[i]**2, color='firebrick')
                 else:

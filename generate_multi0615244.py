@@ -74,8 +74,8 @@ class System():
 
     # generate planet parameters
     def generate(self):
-        Mcore_check = False 
-        Xinit_check = False 
+        Mcore_check = False
+        Xinit_check = False
         Mstar_check = False
 
         self.Pc = self.Pcdf(random.uniform())
@@ -83,8 +83,7 @@ class System():
         
         # draw random stellar mass according to Gaussian distributions between [0.5,1.5]Msol
         while Mstar_check == False:
-            self.Mstar = random.normal(loc=1.0,
-                                        scale=0.15)
+            self.Mstar = random.normal(loc=1.0, scale=0.15)
             self.smet = 0.0
             if 0.5 < self.Mstar < 1.5:
                 Mstar_check = True
@@ -151,8 +150,11 @@ class System():
                 else:
                     # initial atmospheric mass fraction according to scaling relation of Ginzburg et al. 2016
                     L = 10**Lbol_interp([self.Mstar, 0.0, np.log10(3000 * 1e6)])[0] * L_sun
+                    
                     Teq = ( (L / (16*stefan*pi)) * (4*pi*pi / (G * self.Mstar * M_sun * (self.period[i] * day)**2))**(2/3) )**0.25
+                    
                     self.Xinit[i] = 0.01 * (self.Mcore[i]**0.4) * ((Teq / 1000)**0.25)
+                    
                     if self.Xinit[i] < 0.001:
                         self.Xinit[i] = 1e-4
                     if self.Xinit[i] > 0.5:
@@ -249,6 +251,7 @@ class System():
             plt.figure(0)
             for i in range(len(self.period)):
                 if self.Ptype[i] == 'SE':
+                    print(type(self.ID))
                     plt.scatter(self.period[i], [float(self.ID[-1])], s=10*self.Rplanet[i]**2, color='firebrick')
                 else:
                     plt.scatter(self.period[i], [float(self.ID[-1])], s=10*self.Rplanet[i]**2, color='C0')
